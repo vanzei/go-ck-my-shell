@@ -1,6 +1,15 @@
 package main
 
-import "strings"
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+)
+
+type config struct {
+	commandArgs string
+}
 
 func cleanInput(text string) []string {
 	output := strings.ToLower(text)
@@ -8,4 +17,52 @@ func cleanInput(text string) []string {
 	return words
 }
 
+func startRepl(cfg *config) {
+	reader := bufio.NewScanner(os.Stdin)
+	for {
+		fmt.Fprint(os.Stdout, "$ ") // <-- Print prompt before reading input
+		reader.Scan()
 
+		words := cleanInput(reader.Text())
+		if len(words) == 0 {
+			continue
+		}
+		commandName := words[0]
+
+		if len(words) > 2 {
+			//parse commandArgs
+			//_ := words[1:]
+		}
+
+		command, exists := getCommands()[commandName]
+		if exists {
+
+			err := command.callback(cfg)
+			if err != nil {
+				fmt.Println(err)
+			}
+			continue
+
+		} else {
+
+			fmt.Println(commandName[:] + ": command not found")
+			continue
+		}
+	}
+}
+
+type cliCommand struct {
+	name        string
+	description string
+	callback    func(*config) error
+}
+
+func getCommands() map[string]cliCommand {
+	return map[string]cliCommand{
+		"exit": {
+			name:        "exit",
+			description: "Exit code 0",
+			callback:    commandExit,
+		},
+	}
+}
