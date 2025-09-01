@@ -8,7 +8,7 @@ import (
 )
 
 type config struct {
-	commandArgs string
+	commandArgs []string
 }
 
 func cleanInput(text string) []string {
@@ -29,14 +29,11 @@ func startRepl(cfg *config) {
 		}
 		commandName := words[0]
 
-		if len(words) > 2 {
-			//parse commandArgs
-			//_ := words[1:]
-		}
+		args := words[1:]
 
 		command, exists := getCommands()[commandName]
 		if exists {
-
+			cfg.commandArgs = args
 			err := command.callback(cfg)
 			if err != nil {
 				fmt.Println(err)
@@ -63,6 +60,11 @@ func getCommands() map[string]cliCommand {
 			name:        "exit",
 			description: "Exit code 0",
 			callback:    commandExit,
+		},
+		"echo": {
+			name:        "echo",
+			description: "Print Arguments",
+			callback:    commandEcho,
 		},
 	}
 }
