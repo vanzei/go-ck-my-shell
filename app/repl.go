@@ -58,13 +58,18 @@ func getCommands() map[string]cliCommand {
 	return map[string]cliCommand{
 		"exit": {
 			name:        "exit",
-			description: "Exit code 0",
+			description: "exit is a shell builtin",
 			callback:    commandExit,
 		},
 		"echo": {
 			name:        "echo",
-			description: "Print Arguments",
+			description: "echo is a shell builtin",
 			callback:    commandEcho,
+		},
+		"type": {
+			name: "type",
+			description: "type is a shell builtin",
+			callback: commandType,
 		},
 	}
 }
