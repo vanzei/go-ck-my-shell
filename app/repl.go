@@ -53,9 +53,6 @@ func startRepl(cfg *config) {
 		cmd.Stderr = os.Stderr
 		err = cmd.Run()
 		if err != nil {
-			// fmt.Println("Error executing command:", err)
-			// continue
-			//fmt.Println(err)
 			continue
 		}
 	}
@@ -83,6 +80,11 @@ func getCommands() map[string]cliCommand {
 			name:        "type",
 			description: "type is a shell builtin",
 			callback:    commandType,
+		},
+		"pwd": {
+			name:        "pwd",
+			description: "pwd is a shell builtin",
+			callback:    commandPwd,
 		},
 	}
 }
