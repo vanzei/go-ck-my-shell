@@ -15,5 +15,11 @@ func commandType(cfg *config) error {
 		return nil
 	}
 	// Otherwise, search in $PATH
-	return handlerSearchFile(cfg, target)
+	fullPath, err := handlerSearchFile(cfg, target)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s is %s\n", target, fullPath)
+	return nil
 }

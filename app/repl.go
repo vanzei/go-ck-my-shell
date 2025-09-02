@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -12,8 +13,7 @@ type config struct {
 }
 
 func cleanInput(text string) []string {
-	output := strings.ToLower(text)
-	words := strings.Fields(output)
+	words := strings.Fields(text)
 	return words
 }
 
@@ -31,8 +31,8 @@ func startRepl(cfg *config) {
 
 		args := words[1:]
 
-		command, exists := getCommands()[commandName]
-		if exists {
+		command, existsInternal := getCommands()[commandName]
+		if existsInternal {
 			cfg.commandArgs = args
 			err := command.callback(cfg)
 			if err != nil {
@@ -40,9 +40,22 @@ func startRepl(cfg *config) {
 			}
 			continue
 
-		} else {
+		}
 
-			fmt.Println(commandName[:] + ": command not found")
+		_, err := handlerSearchFile(cfg, commandName)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		cmd := exec.Command(commandName, args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+		if err != nil {
+			// fmt.Println("Error executing command:", err)
+			// continue
+			//fmt.Println(err)
 			continue
 		}
 	}
@@ -67,9 +80,9 @@ func getCommands() map[string]cliCommand {
 			callback:    commandEcho,
 		},
 		"type": {
-			name: "type",
+			name:        "type",
 			description: "type is a shell builtin",
-			callback: commandType,
+			callback:    commandType,
 		},
 	}
 }

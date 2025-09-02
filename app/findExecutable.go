@@ -61,16 +61,16 @@ func splitPath() []string {
 	return pathDirs
 }
 
-func handlerSearchFile(cfg *config, target string) error {
+func handlerSearchFile(cfg *config, target string) (string, error) {
 	paths := splitPath()
 	for _, dir := range paths {
 		fullPath := filepath.Join(dir, target)
 		info, err := os.Stat(fullPath)
 		if err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0 {
-			fmt.Printf("%s is %s\n", target, fullPath)
-			return nil
+			//fmt.Printf("%s is %s\n", target, fullPath)
+			return fullPath, nil
 		}
 	}
 	//fmt.Printf("%s: not found\n", target)
-	return fmt.Errorf("%s: not found", target)
+	return "", fmt.Errorf("%s: not found", target)
 }
