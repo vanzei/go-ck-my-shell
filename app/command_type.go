@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -10,11 +9,11 @@ func commandType(cfg *config) error {
 		return nil
 	}
 	target := cfg.commandArgs[0]
-	for key, option := range getCommands() {
-		if key == target {
-			fmt.Println(option.description)
-			return nil
-		}
+	// First, check if it's a builtin
+	if cmd, ok := getCommands()[target]; ok {
+		fmt.Println(cmd.description)
+		return nil
 	}
-	return errors.New(target + ": not found")
+	// Otherwise, search in $PATH
+	return handlerSearchFile(cfg, target)
 }
