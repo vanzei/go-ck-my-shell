@@ -10,9 +10,7 @@ var _ = fmt.Fprint
 func main() {
 	// Wait for user input
 	var _ = fmt.Fprint
-	for {
 
-		cfg := &config{}
-		startRepl(cfg)
-	}
+	cfg := &config{}
+	startRepl(cfg)
 }

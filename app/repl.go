@@ -86,5 +86,10 @@ func getCommands() map[string]cliCommand {
 			description: "pwd is a shell builtin",
 			callback:    commandPwd,
 		},
+		"cd": {
+			name:        "cd",
+			description: "cd is a shell builtin",
+			callback:    commandCd,
+		},
 	}
 }
