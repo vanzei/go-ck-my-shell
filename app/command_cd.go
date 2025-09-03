@@ -17,6 +17,13 @@ func commandCd(cfg *config) error {
 }
 
 func changeDirectory(path string) error {
+	if path == "~" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("cd: could not determine home directory")
+		}
+		path = homeDir
+	}
 	err := os.Chdir(path)
 	if err != nil {
 		return fmt.Errorf("cd: %s: No such file or directory", path)
