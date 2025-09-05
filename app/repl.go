@@ -5,17 +5,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 type config struct {
 	commandArgs []string
 }
 
-func cleanInput(text string) []string {
-	words := strings.Fields(text)
-	return words
-}
+//func cleanInput(text string) []string {
+//	words := strings.Fields(text)
+//	return words
+//}
 
 func startRepl(cfg *config) {
 	reader := bufio.NewScanner(os.Stdin)
@@ -23,13 +22,7 @@ func startRepl(cfg *config) {
 		fmt.Fprint(os.Stdout, "$ ") // <-- Print prompt before reading input
 		reader.Scan()
 
-		words := cleanInput(reader.Text())
-		if len(words) == 0 {
-			continue
-		}
-		commandName := words[0]
-
-		args := words[1:]
+		commandName, args := parseInputWithQuotes(reader.Text())
 
 		command, existsInternal := getCommands()[commandName]
 		if existsInternal {
