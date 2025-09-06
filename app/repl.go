@@ -11,11 +11,6 @@ type config struct {
 	commandArgs []string
 }
 
-//func cleanInput(text string) []string {
-//	words := strings.Fields(text)
-//	return words
-//}
-
 func startRepl(cfg *config) {
 	reader := bufio.NewScanner(os.Stdin)
 	for {

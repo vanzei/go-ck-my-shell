@@ -2,38 +2,43 @@ package main
 
 import (
 	"strings"
+	"unicode"
 )
 
 // Returns commandName, commandArgs
 func parseInputWithQuotes(input string) (string, []string) {
 	var tokens []string
 	var current strings.Builder
-	inSingle, inDouble := false, false
+	inSingle, inDouble, escaped := false, false, false
 
-	for i := 0; i < len(input); i++ {
-		c := input[i]
-		switch c {
-		case '\'':
-			if !inDouble {
-				inSingle = !inSingle
-				continue
+	for _, c := range input {
+		switch {
+
+		case escaped:
+			current.WriteRune(c)
+			escaped = false
+		case c == '\\' && !inDouble && !inSingle:
+			escaped = true
+
+		case c == '\'' && !inDouble:
+			inSingle = !inSingle
+
+		case c == '"' && !inSingle:
+			inDouble = !inDouble
+
+		case unicode.IsSpace(c) && !inSingle && !inDouble:
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
 			}
-		case '"':
-			if !inSingle {
-				inDouble = !inDouble
-				continue
-			}
-		case ' ':
-			if !inSingle && !inDouble {
-				if current.Len() > 0 {
-					tokens = append(tokens, current.String())
-					current.Reset()
-				}
-				continue
-			}
+
+		default:
+			current.WriteRune(c)
+
 		}
-		current.WriteByte(c)
 	}
+
+	// Add the last token if present
 	if current.Len() > 0 {
 		tokens = append(tokens, current.String())
 	}
