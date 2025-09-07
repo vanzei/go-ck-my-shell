@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/chzyer/readline"
 )
@@ -12,7 +13,30 @@ import (
 type config struct {
 	commandArgs []string
 }
+type shellCompleter struct {
+	commands []string
+}
 
+func (c *shellCompleter) Do(line []rune, pos int) (newLine [][]rune, length int) {
+	word := string(line[:pos])
+	var matches [][]rune
+	for _, cmd := range c.commands {
+		if strings.HasPrefix(cmd, word) {
+			matches = append(matches, []rune(cmd))
+		}
+	}
+	if len(matches) == 1 {
+		// Only one match: autocomplete the missing part
+		completion := append(matches[0][len(word):], ' ')
+		return [][]rune{completion}, pos
+	}
+	if len(matches) == 0 {
+		// Emit bell
+		fmt.Fprint(os.Stdout, "\a")
+	}
+	// Multiple matches: do not autocomplete, just return original
+	return nil, pos
+}
 func startRepl(cfg *config) {
 	// Build a list of command names for completion
 	var commands []string
@@ -21,11 +45,7 @@ func startRepl(cfg *config) {
 	}
 
 	// Set up completer
-	completer := readline.NewPrefixCompleter()
-	for _, cmd := range commands {
-		completer.Children = append(completer.Children, readline.PcItem(cmd))
-	}
-
+	completer := &shellCompleter{commands: commands}
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:          "$ ",
 		AutoComplete:    completer,
