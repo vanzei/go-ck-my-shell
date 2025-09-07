@@ -1,11 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+
+	"github.com/chzyer/readline"
 )
 
 type config struct {
@@ -13,12 +14,40 @@ type config struct {
 }
 
 func startRepl(cfg *config) {
-	reader := bufio.NewScanner(os.Stdin)
-	for {
-		fmt.Fprint(os.Stdout, "$ ")
-		reader.Scan()
+	// Build a list of command names for completion
+	var commands []string
+	for cmd := range getCommands() {
+		commands = append(commands, cmd)
+	}
 
-		commandName, args := parseInputWithQuotes(reader.Text())
+	// Set up completer
+	completer := readline.NewPrefixCompleter()
+	for _, cmd := range commands {
+		completer.Children = append(completer.Children, readline.PcItem(cmd))
+	}
+
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "$ ",
+		AutoComplete:    completer,
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "readline error:", err)
+		return
+	}
+	defer rl.Close()
+
+	for {
+		line, err := rl.Readline()
+		if err == readline.ErrInterrupt {
+			continue
+		} else if err == io.EOF {
+			break
+		}
+
+		c := line
+		commandName, args := parseInputWithQuotes(c)
 
 		var outFile, errorFile *os.File
 		var outputWriter io.Writer = os.Stdout
@@ -74,7 +103,6 @@ func startRepl(cfg *config) {
 		command, existsInternal := getCommands()[commandName]
 		if existsInternal {
 			cfg.commandArgs = args
-			// Pass outputWriter to built-in commands
 			err := command.callbackWithWriter(cfg, outputWriter)
 			if err != nil {
 				fmt.Fprintln(errorWriter, err)
@@ -88,7 +116,7 @@ func startRepl(cfg *config) {
 			continue
 		}
 
-		_, err := handlerSearchFile(cfg, commandName)
+		_, err = handlerSearchFile(cfg, commandName)
 		if err != nil {
 			fmt.Fprintln(errorWriter, err)
 		}
