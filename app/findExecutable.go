@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -9,7 +10,7 @@ import (
 )
 
 // findExecutablesInDir searches for executable files within a given directory.
-func findExecutablesInDir(dirPath string) ([]string, error) {
+func findExecutablesInDir(dirPath string, w io.Writer) error {
 	var executables []string
 
 	// Use filepath.WalkDir for efficient directory traversal.
@@ -39,10 +40,14 @@ func findExecutablesInDir(dirPath string) ([]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error walking directory %s: %w", dirPath, err)
+		return fmt.Errorf("error walking directory %s: %w", dirPath, err)
 	}
 
-	return executables, nil
+	// Print results to the provided writer
+	for _, exe := range executables {
+		fmt.Fprintln(w, exe)
+	}
+	return nil
 }
 
 func splitPath() []string {

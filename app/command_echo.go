@@ -1,12 +1,17 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+)
 
-func commandEcho(cfg *config) error {
-	for _, arg := range cfg.commandArgs {
-		fmt.Print(arg + " ")
+func commandEcho(cfg *config, w io.Writer) error {
+	for i, arg := range cfg.commandArgs {
+		if i > 0 {
+			fmt.Fprint(w, " ")
+		}
+		fmt.Fprint(w, arg)
 	}
-	fmt.Println()
-
+	fmt.Fprint(w, "\n")
 	return nil
 }
