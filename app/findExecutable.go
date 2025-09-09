@@ -10,7 +10,7 @@ import (
 )
 
 // findExecutablesInDir searches for executable files within a given directory.
-func findExecutablesInDir(dirPath string, w io.Writer) error {
+func findExecutablesInDir(dirPath string, w io.Writer) []string {
 	var executables []string
 
 	// Use filepath.WalkDir for efficient directory traversal.
@@ -40,14 +40,14 @@ func findExecutablesInDir(dirPath string, w io.Writer) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("error walking directory %s: %w", dirPath, err)
+		return []string{"error walking directory "}
 	}
 
 	// Print results to the provided writer
-	for _, exe := range executables {
-		fmt.Fprintln(w, exe)
-	}
-	return nil
+	//for _, exe := range executables {
+	//	fmt.Fprintln(w, exe)
+	//}
+	return executables
 }
 
 func splitPath() []string {
@@ -72,10 +72,23 @@ func handlerSearchFile(cfg *config, target string) (string, error) {
 		fullPath := filepath.Join(dir, target)
 		info, err := os.Stat(fullPath)
 		if err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0 {
-			//fmt.Printf("%s is %s\n", target, fullPath)
+			// fmt.Printf("%s is %s\n", target, fullPath)
 			return fullPath, nil
 		}
 	}
-	//fmt.Printf("%s: not found\n", target)
+	// fmt.Printf("%s: not found\n", target)
 	return "", fmt.Errorf("%s: not found", target)
+}
+
+func allExecutables() []string {
+	var foundExecs []string
+	folders := splitPath()
+	for _, folder := range folders {
+		execs := findExecutablesInDir(folder, os.Stdout)
+		for _, exec := range execs {
+			base := filepath.Base(exec)
+			foundExecs = append(foundExecs, base)
+		}
+	}
+	return foundExecs
 }

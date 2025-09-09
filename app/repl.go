@@ -25,7 +25,9 @@ func (c *shellCompleter) Do(line []rune, pos int) (newLine [][]rune, length int)
 			matches = append(matches, []rune(cmd))
 		}
 	}
-	if len(matches) == 1 {
+	// fmt.Printf("DEBUG: word='%s', matches=%v\n", word, matches) // Add this line
+
+	if len(matches) >= 1 {
 		// Only one match: autocomplete the missing part
 		completion := append(matches[0][len(word):], ' ')
 		return [][]rune{completion}, pos
@@ -37,13 +39,17 @@ func (c *shellCompleter) Do(line []rune, pos int) (newLine [][]rune, length int)
 	// Multiple matches: do not autocomplete, just return original
 	return nil, pos
 }
+
 func startRepl(cfg *config) {
 	// Build a list of command names for completion
 	var commands []string
 	for cmd := range getCommands() {
 		commands = append(commands, cmd)
 	}
+	executables := allExecutables()
 
+	commands = append(commands, executables...)
+	//	fmt.Println(commands)
 	// Set up completer
 	completer := &shellCompleter{commands: commands}
 	rl, err := readline.NewEx(&readline.Config{
@@ -88,7 +94,7 @@ func startRepl(cfg *config) {
 				}
 			case ">>", "1>>":
 				if i+1 < len(args) {
-					f, err := os.OpenFile(args[i+1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+					f, err := os.OpenFile(args[i+1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 					if err == nil {
 						outFile = f
 						outputWriter = outFile
@@ -108,7 +114,7 @@ func startRepl(cfg *config) {
 				}
 			case "2>>":
 				if i+1 < len(args) {
-					f, err := os.OpenFile(args[i+1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+					f, err := os.OpenFile(args[i+1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 					if err == nil {
 						errorFile = f
 						errorWriter = errorFile
