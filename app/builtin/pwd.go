@@ -1,11 +1,11 @@
-package main
+package builtin
 
 import (
 	"fmt"
 	"os"
 )
 
-func commandPwd(cfg *config) error {
+func CommandPwd(cfg *Config) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return err

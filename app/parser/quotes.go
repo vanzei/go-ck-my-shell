@@ -1,11 +1,11 @@
-package main
+package parser
 
 import (
 	"strings"
 	"unicode"
 )
 
-func parseInputWithQuotes(input string) (string, []string) {
+func ParseInputWithQuotes(input string) (string, []string) {
 	var tokens []string
 	var current strings.Builder
 	inSingle, inDouble := false, false
@@ -15,18 +15,15 @@ func parseInputWithQuotes(input string) (string, []string) {
 
 		switch {
 		case c == '\\' && !inSingle && !inDouble:
-			// Outside quotes: escape next character
 			if i+1 < len(input) {
 				i++
 				current.WriteByte(input[i])
 			}
 		case inDouble && c == '\\':
-			// Inside double quotes: only escape ", \, $, `
 			if i+1 < len(input) && strings.ContainsRune("\"\\$`", rune(input[i+1])) {
 				i++
 				current.WriteByte(input[i])
 			} else if i+1 < len(input) {
-				// For other characters, keep the backslash
 				current.WriteByte(byte(c))
 				i++
 				current.WriteByte(input[i])
@@ -49,7 +46,6 @@ func parseInputWithQuotes(input string) (string, []string) {
 		tokens = append(tokens, current.String())
 	}
 
-	// Strip quotes from tokens
 	for i, t := range tokens {
 		if len(t) > 1 && ((t[0] == '"' && t[len(t)-1] == '"') || (t[0] == '\'' && t[len(t)-1] == '\'')) {
 			tokens[i] = t[1 : len(t)-1]

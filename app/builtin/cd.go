@@ -1,22 +1,22 @@
-package main
+package builtin
 
 import (
 	"fmt"
 	"os"
 )
 
-func commandCd(cfg *config) error {
-	if len(cfg.commandArgs) < 1 {
+func CommandCd(cfg *Config) error {
+	if len(cfg.CommandArgs) < 1 {
 		return nil
 	}
-	err := changeDirectory(cfg.commandArgs[0])
+	err := ChangeDirectory(cfg.CommandArgs[0])
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func changeDirectory(path string) error {
+func ChangeDirectory(path string) error {
 	if path == "~" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {

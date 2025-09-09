@@ -9,11 +9,12 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
+	builtinPkg "github.com/codecrafters-io/shell-starter-go/app/builtin"
+	"github.com/codecrafters-io/shell-starter-go/app/core"
+	execPkg "github.com/codecrafters-io/shell-starter-go/app/exec"
+	parserPkg "github.com/codecrafters-io/shell-starter-go/app/parser"
 )
 
-type config struct {
-	commandArgs []string
-}
 type shellCompleter struct {
 	commands   []string
 	lastPrefix string
@@ -35,29 +36,50 @@ func (c *shellCompleter) Do(line []rune, pos int) (newLine [][]rune, length int)
 	}
 	c.lastPrefix = word
 
-	if len(matches) == 1 {
-		// Only one match: autocomplete the missing part and add a space
-		completion := append(matches[0][len(word):], ' ')
-		c.tabCount = 0
-		return [][]rune{completion}, pos
-	}
 	if len(matches) == 0 {
 		fmt.Fprint(os.Stdout, "\a")
 		c.tabCount = 0
 		return nil, pos
 	}
-	// Multiple matches
+
+	// Find longest common prefix among matches
+	lcp := word
+	if len(matches) > 0 {
+		lcp = longestCommonPrefix(matches)
+	}
+
+	if lcp != word {
+		// If the longest common prefix is a full command, add space
+		for _, m := range matches {
+			if string(m) == lcp && len(matches) == 1 {
+				completion := append([]rune(lcp[len(word):]), ' ')
+				c.tabCount = 0
+				return [][]rune{completion}, pos
+			}
+		}
+		// Otherwise, autocomplete to longest common prefix (no space)
+		completion := []rune(lcp[len(word):])
+		c.tabCount = 0
+		return [][]rune{completion}, pos
+	}
+
+	// If only one match and it's fully typed, add space
+	if len(matches) == 1 && string(matches[0]) == word {
+		completion := []rune{' '}
+		c.tabCount = 0
+		return [][]rune{completion}, pos
+	}
+
+	// Multiple matches, but no further completion possible
 	c.tabCount++
 	if c.tabCount == 1 {
-		// First tab: emit bell
 		fmt.Fprint(os.Stdout, "\a")
 		return nil, pos
 	}
 	if c.tabCount == 2 {
-		// Second tab: print matches separated by 2 spaces, then prompt and buffer
 		fmt.Fprintln(os.Stdout, "\n"+joinWithDoubleSpace(matches))
 		fmt.Fprint(os.Stdout, "$ "+word)
-		c.tabCount = 0 // reset for next time
+		c.tabCount = 0
 		return nil, pos
 	}
 	return nil, pos
@@ -72,19 +94,44 @@ func joinWithDoubleSpace(matches [][]rune) string {
 	return strings.Join(strs, "  ")
 }
 
-func startRepl(cfg *config) {
+// Add this helper function:
+func longestCommonPrefix(strs [][]rune) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		i := 0
+		for i < len(prefix) && i < len(s) && prefix[i] == s[i] {
+			i++
+		}
+		prefix = prefix[:i]
+		if len(prefix) == 0 {
+			break
+		}
+	}
+	return string(prefix)
+}
+
+func startRepl(cfg *builtinPkg.Config) {
 	// Use a map to deduplicate command names
 	unique := make(map[string]struct{})
 
 	// Add built-in commands
-	for cmd := range getCommands() {
+	for cmd := range builtinPkg.GetCommands() {
 		unique[cmd] = struct{}{}
 	}
 
 	// Add external commands
-	executables := allExecutables()
-	for _, exec := range executables {
-		unique[exec] = struct{}{}
+	paths := core.SplitPath()
+	for _, dir := range paths {
+		for _, execName := range execPkg.FindExecutablesInDir(dir, os.Stdout) {
+			base := execName
+			if strings.Contains(execName, "/") {
+				base = execName[strings.LastIndex(execName, "/")+1:]
+			}
+			unique[base] = struct{}{}
+		}
 	}
 
 	// Build the deduplicated slice
@@ -119,7 +166,7 @@ func startRepl(cfg *config) {
 		}
 
 		c := line
-		commandName, args := parseInputWithQuotes(c)
+		commandName, args := parserPkg.ParseInputWithQuotes(c)
 
 		var outFile, errorFile *os.File
 		var outputWriter io.Writer = os.Stdout
@@ -172,10 +219,10 @@ func startRepl(cfg *config) {
 			i++
 		}
 
-		command, existsInternal := getCommands()[commandName]
+		command, existsInternal := builtinPkg.GetCommands()[commandName]
 		if existsInternal {
-			cfg.commandArgs = args
-			err := command.callbackWithWriter(cfg, outputWriter)
+			cfg.CommandArgs = args
+			err := command.CallbackWithWriter(cfg, outputWriter)
 			if err != nil {
 				fmt.Fprintln(errorWriter, err)
 			}
@@ -188,7 +235,7 @@ func startRepl(cfg *config) {
 			continue
 		}
 
-		_, err = handlerSearchFile(cfg, commandName)
+		_, err = execPkg.HandlerSearchFile(cfg, commandName)
 		if err != nil {
 			fmt.Fprintln(errorWriter, err)
 		}
@@ -209,51 +256,5 @@ func startRepl(cfg *config) {
 		if err != nil {
 			continue
 		}
-	}
-}
-
-type cliCommand struct {
-	name        string
-	description string
-	// Add callbackWithWriter for built-ins
-	callbackWithWriter func(*config, io.Writer) error
-}
-
-// Update getCommands to use callbackWithWriter for built-ins
-func getCommands() map[string]cliCommand {
-	return map[string]cliCommand{
-		"exit": {
-			name:        "exit",
-			description: "exit is a shell builtin",
-			callbackWithWriter: func(cfg *config, w io.Writer) error {
-				return commandExit(cfg)
-			},
-		},
-		"echo": {
-			name:               "echo",
-			description:        "echo is a shell builtin",
-			callbackWithWriter: commandEcho,
-		},
-		"type": {
-			name:        "type",
-			description: "type is a shell builtin",
-			callbackWithWriter: func(cfg *config, w io.Writer) error {
-				return commandType(cfg)
-			},
-		},
-		"pwd": {
-			name:        "pwd",
-			description: "pwd is a shell builtin",
-			callbackWithWriter: func(cfg *config, w io.Writer) error {
-				return commandPwd(cfg)
-			},
-		},
-		"cd": {
-			name:        "cd",
-			description: "cd is a shell builtin",
-			callbackWithWriter: func(cfg *config, w io.Writer) error {
-				return commandCd(cfg)
-			},
-		},
 	}
 }
