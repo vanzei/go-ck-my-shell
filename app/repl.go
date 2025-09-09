@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/chzyer/readline"
@@ -14,7 +15,9 @@ type config struct {
 	commandArgs []string
 }
 type shellCompleter struct {
-	commands []string
+	commands   []string
+	lastPrefix string
+	tabCount   int
 }
 
 func (c *shellCompleter) Do(line []rune, pos int) (newLine [][]rune, length int) {
@@ -25,31 +28,74 @@ func (c *shellCompleter) Do(line []rune, pos int) (newLine [][]rune, length int)
 			matches = append(matches, []rune(cmd))
 		}
 	}
-	// fmt.Printf("DEBUG: word='%s', matches=%v\n", word, matches) // Add this line
 
-	if len(matches) >= 1 {
-		// Only one match: autocomplete the missing part
+	// Reset tabCount if prefix changed
+	if word != c.lastPrefix {
+		c.tabCount = 0
+	}
+	c.lastPrefix = word
+
+	if len(matches) == 1 {
+		// Only one match: autocomplete the missing part and add a space
 		completion := append(matches[0][len(word):], ' ')
+		c.tabCount = 0
 		return [][]rune{completion}, pos
 	}
 	if len(matches) == 0 {
-		// Emit bell
 		fmt.Fprint(os.Stdout, "\a")
+		c.tabCount = 0
+		return nil, pos
 	}
-	// Multiple matches: do not autocomplete, just return original
+	// Multiple matches
+	c.tabCount++
+	if c.tabCount == 1 {
+		// First tab: emit bell
+		fmt.Fprint(os.Stdout, "\a")
+		return nil, pos
+	}
+	if c.tabCount == 2 {
+		// Second tab: print matches separated by 2 spaces, then prompt and buffer
+		fmt.Fprintln(os.Stdout, "\n"+joinWithDoubleSpace(matches))
+		fmt.Fprint(os.Stdout, "$ "+word)
+		c.tabCount = 0 // reset for next time
+		return nil, pos
+	}
 	return nil, pos
 }
 
+// Helper to join matches with two spaces
+func joinWithDoubleSpace(matches [][]rune) string {
+	var strs []string
+	for _, m := range matches {
+		strs = append(strs, string(m))
+	}
+	return strings.Join(strs, "  ")
+}
+
 func startRepl(cfg *config) {
-	// Build a list of command names for completion
-	var commands []string
+	// Use a map to deduplicate command names
+	unique := make(map[string]struct{})
+
+	// Add built-in commands
 	for cmd := range getCommands() {
+		unique[cmd] = struct{}{}
+	}
+
+	// Add external commands
+	executables := allExecutables()
+	for _, exec := range executables {
+		unique[exec] = struct{}{}
+	}
+
+	// Build the deduplicated slice
+	var commands []string
+	for cmd := range unique {
 		commands = append(commands, cmd)
 	}
-	executables := allExecutables()
 
-	commands = append(commands, executables...)
-	//	fmt.Println(commands)
+	// Sort commands alphabetically
+	sort.Strings(commands)
+
 	// Set up completer
 	completer := &shellCompleter{commands: commands}
 	rl, err := readline.NewEx(&readline.Config{
