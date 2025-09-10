@@ -150,12 +150,15 @@ func startRepl(cfg *builtinPkg.Config) {
 		AutoComplete:    completer,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
+		HistoryFile:     "/tmp/your_shell_history.txt",
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "readline error:", err)
 		return
 	}
 	defer rl.Close()
+
+	cfg.RL = rl
 
 	for {
 		line, err := rl.Readline()
@@ -164,6 +167,8 @@ func startRepl(cfg *builtinPkg.Config) {
 		} else if err == io.EOF {
 			break
 		}
+
+		cfg.History = append(cfg.History, line)
 
 		c := line
 		segments := parserPkg.SplitCommandsRespectingQuotes(c)
@@ -304,7 +309,8 @@ func startRepl(cfg *builtinPkg.Config) {
 			}
 			err := cmd.Start()
 			if err != nil {
-				//fmt.Fprintln(os.Stderr, "error starting command:", err)
+				continue
+				// fmt.Fprintln(os.Stderr, "error starting command:", err)
 			}
 		}
 		// Close write ends in parent
@@ -318,7 +324,8 @@ func startRepl(cfg *builtinPkg.Config) {
 			}
 			err := cmd.Wait()
 			if err != nil {
-				//fmt.Fprintln(os.Stderr, "error waiting for command:", err)
+				// fmt.Fprintln(os.Stderr, "error waiting for command:", err)
+				continue
 			}
 			if outFiles[i] != nil {
 				outFiles[i].Close()

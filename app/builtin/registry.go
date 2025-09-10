@@ -45,5 +45,12 @@ func GetCommands() map[string]CliCommand {
 				return CommandCd(cfg)
 			},
 		},
+		"history": {
+			Name:        "history",
+			Description: "history is a shell builtin",
+			CallbackWithWriter: func(cfg *Config, w io.Writer) error {
+				return commandHistory(cfg, w)
+			},
+		},
 	}
 }
