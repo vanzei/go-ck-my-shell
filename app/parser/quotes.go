@@ -57,3 +57,38 @@ func ParseInputWithQuotes(input string) (string, []string) {
 	}
 	return tokens[0], tokens[1:]
 }
+
+func SplitCommandsRespectingQuotes(input string) []string {
+	var segments []string
+	var current strings.Builder
+	inSingle, inDouble := false, false
+
+	for i := 0; i < len(input); i++ {
+		c := input[i]
+		switch c {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+			current.WriteByte(c)
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+			current.WriteByte(c)
+		case '|':
+			if !inSingle && !inDouble {
+				segments = append(segments, strings.TrimSpace(current.String()))
+				current.Reset()
+			} else {
+				current.WriteByte(c)
+			}
+		default:
+			current.WriteByte(c)
+		}
+	}
+	if current.Len() > 0 {
+		segments = append(segments, strings.TrimSpace(current.String()))
+	}
+	return segments
+}

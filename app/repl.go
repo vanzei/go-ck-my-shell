@@ -166,95 +166,170 @@ func startRepl(cfg *builtinPkg.Config) {
 		}
 
 		c := line
-		commandName, args := parserPkg.ParseInputWithQuotes(c)
-
-		var outFile, errorFile *os.File
-		var outputWriter io.Writer = os.Stdout
-		var errorWriter io.Writer = os.Stderr
-
-		i := 0
-		for i < len(args) {
-			switch args[i] {
-			case ">", "1>":
-				if i+1 < len(args) {
-					f, err := os.Create(args[i+1])
-					if err == nil {
-						outFile = f
-						outputWriter = outFile
-					}
-					args = append(args[:i], args[i+2:]...)
-					continue
-				}
-			case ">>", "1>>":
-				if i+1 < len(args) {
-					f, err := os.OpenFile(args[i+1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-					if err == nil {
-						outFile = f
-						outputWriter = outFile
-					}
-					args = append(args[:i], args[i+2:]...)
-					continue
-				}
-			case "2>":
-				if i+1 < len(args) {
-					f, err := os.Create(args[i+1])
-					if err == nil {
-						errorFile = f
-						errorWriter = errorFile
-					}
-					args = append(args[:i], args[i+2:]...)
-					continue
-				}
-			case "2>>":
-				if i+1 < len(args) {
-					f, err := os.OpenFile(args[i+1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-					if err == nil {
-						errorFile = f
-						errorWriter = errorFile
-					}
-					args = append(args[:i], args[i+2:]...)
-					continue
-				}
+		segments := parserPkg.SplitCommandsRespectingQuotes(c)
+		numCmds := len(segments)
+		if numCmds == 0 {
+			continue
+		}
+		// Set up pipes
+		pipes := make([][2]*os.File, numCmds-1)
+		for i := 0; i < numCmds-1; i++ {
+			r, w, err := os.Pipe()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "pipe error:", err)
+				continue
 			}
-			i++
+			pipes[i][0] = r
+			pipes[i][1] = w
 		}
 
-		command, existsInternal := builtinPkg.GetCommands()[commandName]
-		if existsInternal {
-			cfg.CommandArgs = args
-			err := command.CallbackWithWriter(cfg, outputWriter)
+		cmds := make([]*exec.Cmd, numCmds)
+		outFiles := make([]*os.File, numCmds)
+		errFiles := make([]*os.File, numCmds)
+
+		for i, segment := range segments {
+			commandName, args := parserPkg.ParseInputWithQuotes(segment)
+			var outFile, errorFile *os.File
+			var outputWriter io.Writer = os.Stdout
+			var errorWriter io.Writer = os.Stderr
+
+			// Redirection handling (same as before)
+			j := 0
+			for j < len(args) {
+				switch args[j] {
+				case ">", "1>":
+					if j+1 < len(args) {
+						f, err := os.Create(args[j+1])
+						if err == nil {
+							outFile = f
+							outputWriter = outFile
+						}
+						args = append(args[:j], args[j+2:]...)
+						continue
+					}
+				case ">>", "1>>":
+					if j+1 < len(args) {
+						f, err := os.OpenFile(args[j+1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+						if err == nil {
+							outFile = f
+							outputWriter = outFile
+						}
+						args = append(args[:j], args[j+2:]...)
+						continue
+					}
+				case "2>":
+					if j+1 < len(args) {
+						f, err := os.Create(args[j+1])
+						if err == nil {
+							errorFile = f
+							errorWriter = errorFile
+						}
+						args = append(args[:j], args[j+2:]...)
+						continue
+					}
+				case "2>>":
+					if j+1 < len(args) {
+						f, err := os.OpenFile(args[j+1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+						if err == nil {
+							errorFile = f
+							errorWriter = errorFile
+						}
+						args = append(args[:j], args[j+2:]...)
+						continue
+					}
+				}
+				j++
+			}
+			outFiles[i] = outFile
+			errFiles[i] = errorFile
+
+			command, existsInternal := builtinPkg.GetCommands()[commandName]
+			if existsInternal {
+				// Builtin: only support as first or last in pipeline for now
+				cfg.CommandArgs = args
+				if i == 0 {
+					if numCmds == 1 {
+						err := command.CallbackWithWriter(cfg, outputWriter)
+						if err != nil {
+							fmt.Fprintln(errorWriter, err)
+						}
+					} else {
+						// If builtin is first in pipeline, output to pipe
+						err := command.CallbackWithWriter(cfg, pipes[0][1])
+						if err != nil {
+							fmt.Fprintln(errorWriter, err)
+						}
+						pipes[0][1].Close()
+					}
+				} else if i == numCmds-1 {
+					err := command.CallbackWithWriter(cfg, outputWriter)
+					if err != nil {
+						fmt.Fprintln(errorWriter, err)
+					}
+				}
+				if outFile != nil {
+					outFile.Close()
+				}
+				if errorFile != nil {
+					errorFile.Close()
+				}
+				continue
+			}
+
+			_, err := execPkg.HandlerSearchFile(cfg, commandName)
 			if err != nil {
 				fmt.Fprintln(errorWriter, err)
 			}
-			if outFile != nil {
-				outFile.Close()
+
+			cmd := exec.Command(commandName, args...)
+			// Set up stdin/stdout for pipeline
+			if i == 0 {
+				cmd.Stdin = os.Stdin
+			} else {
+				cmd.Stdin = pipes[i-1][0]
 			}
-			if errorFile != nil {
-				errorFile.Close()
+			if i == numCmds-1 {
+				cmd.Stdout = outputWriter
+			} else {
+				cmd.Stdout = pipes[i][1]
 			}
-			continue
+			cmd.Stderr = errorWriter
+			cmds[i] = cmd
 		}
 
-		_, err = execPkg.HandlerSearchFile(cfg, commandName)
-		if err != nil {
-			fmt.Fprintln(errorWriter, err)
+		// Start all commands
+		for _, cmd := range cmds {
+			if cmd == nil {
+				continue
+			}
+			err := cmd.Start()
+			if err != nil {
+				//fmt.Fprintln(os.Stderr, "error starting command:", err)
+			}
 		}
-
-		cmd := exec.Command(commandName, args...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = outputWriter
-		cmd.Stderr = errorWriter
-
-		err = cmd.Run()
-		if outFile != nil {
-			outFile.Close()
+		// Close write ends in parent
+		for i := 0; i < numCmds-1; i++ {
+			pipes[i][1].Close()
 		}
-		if errorFile != nil {
-			errorFile.Close()
+		// Wait for all commands
+		for i, cmd := range cmds {
+			if cmd == nil {
+				continue
+			}
+			err := cmd.Wait()
+			if err != nil {
+				//fmt.Fprintln(os.Stderr, "error waiting for command:", err)
+			}
+			if outFiles[i] != nil {
+				outFiles[i].Close()
+			}
+			if errFiles[i] != nil {
+				errFiles[i].Close()
+			}
 		}
-
-		if err != nil {
-			continue
+		// Close read ends
+		for i := 0; i < numCmds-1; i++ {
+			pipes[i][0].Close()
 		}
 	}
 }
