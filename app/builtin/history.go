@@ -27,6 +27,20 @@ func commandHistory(cfg *Config, w io.Writer) error {
 		return nil
 	}
 
+	// Handle history -w <file>
+	if len(cfg.CommandArgs) >= 2 && cfg.CommandArgs[0] == "-w" {
+		file, err := os.Create(cfg.CommandArgs[1])
+		if err != nil {
+			fmt.Fprintf(w, "history: cannot write file: %v\n", err)
+			return nil
+		}
+		defer file.Close()
+		for _, entry := range cfg.History {
+			fmt.Fprintln(file, entry)
+		}
+		return nil
+	}
+
 	// Optionally support history N
 	n := len(cfg.History)
 	if len(cfg.CommandArgs) == 1 {
