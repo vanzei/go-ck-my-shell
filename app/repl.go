@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -115,6 +116,22 @@ func longestCommonPrefix(strs [][]rune) string {
 
 func startRepl(cfg *builtinPkg.Config) {
 	// Use a map to deduplicate command names
+	histFile := os.Getenv("HISTFILE")
+	// Load history from HISTFILE on startup
+	if histFile != "" {
+		file, err := os.Open(histFile)
+		if err == nil {
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if line != "" {
+					cfg.History = append(cfg.History, line)
+				}
+			}
+			file.Close()
+		}
+	}
+
 	unique := make(map[string]struct{})
 
 	// Add built-in commands
@@ -156,7 +173,19 @@ func startRepl(cfg *builtinPkg.Config) {
 		fmt.Fprintln(os.Stderr, "readline error:", err)
 		return
 	}
-	defer rl.Close()
+	defer func() {
+		rl.Close()
+		// On exit, write history to HISTFILE (overwrite)
+		if histFile != "" {
+			file, err := os.Create(histFile)
+			if err == nil {
+				for _, entry := range cfg.History {
+					fmt.Fprintln(file, entry)
+				}
+				file.Close()
+			}
+		}
+	}()
 
 	cfg.RL = rl
 
