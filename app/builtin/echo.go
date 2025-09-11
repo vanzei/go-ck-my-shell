@@ -3,15 +3,14 @@ package builtin
 import (
 	"fmt"
 	"io"
-
-	"github.com/chzyer/readline"
 )
 
-type Config struct {
-	CommandArgs []string
-	RL          *readline.Instance
-	History     []string
-}
+// type Config struct {
+// 	CommandArgs       []string
+// 	RL                *readline.Instance
+// 	History           []string
+// 	LastHistoryAppend int
+// }
 
 func CommandEcho(cfg *Config, w io.Writer) error {
 	for i, arg := range cfg.CommandArgs {

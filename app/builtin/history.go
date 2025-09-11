@@ -40,7 +40,21 @@ func commandHistory(cfg *Config, w io.Writer) error {
 		}
 		return nil
 	}
-
+	if len(cfg.CommandArgs) >= 2 && cfg.CommandArgs[0] == "-a" {
+		file, err := os.OpenFile(cfg.CommandArgs[1], os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			fmt.Fprintf(w, "history: cannot append file: %v\n", err)
+			return nil
+		}
+		defer file.Close()
+		// Append only new entries
+		for i := cfg.LastHistoryAppend; i < len(cfg.History); i++ {
+			fmt.Fprintln(file, cfg.History[i])
+		}
+		// Update the last appended index
+		cfg.LastHistoryAppend = len(cfg.History)
+		return nil
+	}
 	// Optionally support history N
 	n := len(cfg.History)
 	if len(cfg.CommandArgs) == 1 {
