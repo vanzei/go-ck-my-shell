@@ -167,7 +167,7 @@ func startRepl(cfg *builtinPkg.Config) {
 		AutoComplete:    completer,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
-		HistoryFile:     "/tmp/your_shell_history.txt",
+		HistoryFile:     histFile,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "readline error:", err)
@@ -175,9 +175,9 @@ func startRepl(cfg *builtinPkg.Config) {
 	}
 	defer func() {
 		rl.Close()
-		// On exit, write history to HISTFILE (overwrite)
+		histFile := os.Getenv("HISTFILE")
 		if histFile != "" {
-			file, err := os.Create(histFile)
+			file, err := os.OpenFile(histFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 			if err == nil {
 				for _, entry := range cfg.History {
 					fmt.Fprintln(file, entry)

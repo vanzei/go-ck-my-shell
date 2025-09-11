@@ -5,69 +5,73 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 )
 
 func commandHistory(cfg *Config, w io.Writer) error {
 	// Handle history -r <file>
 	if len(cfg.CommandArgs) >= 2 && cfg.CommandArgs[0] == "-r" {
 		file, err := os.Open(cfg.CommandArgs[1])
-		if err != nil {
-			fmt.Fprintf(w, "history: cannot open file: %v\n", err)
-			return nil
-		}
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if line != "" {
-				cfg.History = append(cfg.History, line)
+		if err == nil {
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if line != "" {
+					cfg.History = append(cfg.History, line)
+				}
 			}
+			file.Close()
 		}
-		return nil
+		return nil // Do not print history after reading
 	}
-
 	// Handle history -w <file>
 	if len(cfg.CommandArgs) >= 2 && cfg.CommandArgs[0] == "-w" {
 		file, err := os.Create(cfg.CommandArgs[1])
-		if err != nil {
-			fmt.Fprintf(w, "history: cannot write file: %v\n", err)
-			return nil
+		if err == nil {
+			for _, entry := range cfg.History {
+				fmt.Fprintln(file, entry)
+			}
+			file.Close()
 		}
-		defer file.Close()
-		for _, entry := range cfg.History {
-			fmt.Fprintln(file, entry)
-		}
-		return nil
+		return nil // Do not print history after writing
 	}
+	// Handle history -a <file>
 	if len(cfg.CommandArgs) >= 2 && cfg.CommandArgs[0] == "-a" {
 		file, err := os.OpenFile(cfg.CommandArgs[1], os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-		if err != nil {
-			fmt.Fprintf(w, "history: cannot append file: %v\n", err)
-			return nil
+		if err == nil {
+			// Track last appended index in cfg (add LastHistoryAppend int to Config)
+			start := 0
+			if cfg.LastHistoryAppend > 0 {
+				start = cfg.LastHistoryAppend
+			}
+			for i := start; i < len(cfg.History); i++ {
+				fmt.Fprintln(file, cfg.History[i])
+			}
+			file.Close()
+			cfg.LastHistoryAppend = len(cfg.History)
 		}
-		defer file.Close()
-		// Append only new entries
-		for i := cfg.LastHistoryAppend; i < len(cfg.History); i++ {
-			fmt.Fprintln(file, cfg.History[i])
+		return nil // Do not print history after appending
+	}
+	// Print in-memory history if available
+	if len(cfg.History) > 0 {
+		for i, entry := range cfg.History {
+			fmt.Fprintf(w, "%d  %s\n", i+1, entry)
 		}
-		// Update the last appended index
-		cfg.LastHistoryAppend = len(cfg.History)
 		return nil
 	}
-	// Optionally support history N
-	n := len(cfg.History)
-	if len(cfg.CommandArgs) == 1 {
-		if num, err := strconv.Atoi(cfg.CommandArgs[0]); err == nil && num < n {
-			n = num
+	// Otherwise, print HISTFILE if set
+	histFile := os.Getenv("HISTFILE")
+	if histFile != "" {
+		file, err := os.Open(histFile)
+		if err == nil {
+			scanner := bufio.NewScanner(file)
+			i := 1
+			for scanner.Scan() {
+				line := scanner.Text()
+				fmt.Fprintf(w, "%d  %s\n", i, line)
+				i++
+			}
+			file.Close()
 		}
-	}
-	start := len(cfg.History) - n
-	if start < 0 {
-		start = 0
-	}
-	for i := start; i < len(cfg.History); i++ {
-		fmt.Fprintf(w, "%d  %s\n", i+1, cfg.History[i])
 	}
 	return nil
 }
