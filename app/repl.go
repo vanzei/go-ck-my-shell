@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,94 +10,192 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/chzyer/readline"
 	builtinPkg "github.com/codecrafters-io/shell-starter-go/app/builtin"
 	"github.com/codecrafters-io/shell-starter-go/app/core"
 	execPkg "github.com/codecrafters-io/shell-starter-go/app/exec"
 	parserPkg "github.com/codecrafters-io/shell-starter-go/app/parser"
+	"golang.org/x/term"
 )
 
-type shellCompleter struct {
-	commands   []string
+var errInterrupt = errors.New("interrupt")
+
+type lineEditor struct {
+	trie       *core.Trie
 	lastPrefix string
 	tabCount   int
+	prompt     string
+	history    []string
+	historyPos int
 }
 
-func (c *shellCompleter) Do(line []rune, pos int) (newLine [][]rune, length int) {
-	word := string(line[:pos])
-	var matches [][]rune
-	for _, cmd := range c.commands {
-		if strings.HasPrefix(cmd, word) {
-			matches = append(matches, []rune(cmd))
-		}
+func newLineEditor(commands []string, prompt string) *lineEditor {
+	trie := core.NewTrie()
+	for _, cmd := range commands {
+		trie.Insert(cmd)
 	}
+	return &lineEditor{trie: trie, prompt: prompt}
+}
 
-	// Reset tabCount if prefix changed
-	if word != c.lastPrefix {
-		c.tabCount = 0
+func (e *lineEditor) setHistory(hist []string) {
+	e.history = hist
+	e.historyPos = len(hist)
+}
+
+func (e *lineEditor) resetTab(prefix string) {
+	if prefix != e.lastPrefix {
+		e.tabCount = 0
 	}
-	c.lastPrefix = word
+	e.lastPrefix = prefix
+}
+
+func (e *lineEditor) handleCompletion(buf []rune) []rune {
+	prefix := string(buf)
+	matches := e.trie.FindWordsWithPrefix(prefix)
+
+	e.resetTab(prefix)
 
 	if len(matches) == 0 {
 		fmt.Fprint(os.Stdout, "\a")
-		c.tabCount = 0
-		return nil, pos
+		e.tabCount = 0
+		return buf
 	}
 
-	// Find longest common prefix among matches
-	lcp := word
-	if len(matches) > 0 {
-		lcp = longestCommonPrefix(matches)
+	lcp := longestCommonPrefix(matches)
+	if lcp != prefix {
+		add := []rune(lcp[len(prefix):])
+		fmt.Print(string(add))
+		e.tabCount = 0
+		e.lastPrefix = lcp
+		return append(buf, add...)
 	}
 
-	if lcp != word {
-		// If the longest common prefix is a full command, add space
-		for _, m := range matches {
-			if string(m) == lcp && len(matches) == 1 {
-				completion := append([]rune(lcp[len(word):]), ' ')
-				c.tabCount = 0
-				return [][]rune{completion}, pos
-			}
-		}
-		// Otherwise, autocomplete to longest common prefix (no space)
-		completion := []rune(lcp[len(word):])
-		c.tabCount = 0
-		return [][]rune{completion}, pos
+	if len(matches) == 1 && matches[0] == prefix {
+		fmt.Print(" ")
+		e.tabCount = 0
+		return append(buf, ' ')
 	}
 
-	// If only one match and it's fully typed, add space
-	if len(matches) == 1 && string(matches[0]) == word {
-		completion := []rune{' '}
-		c.tabCount = 0
-		return [][]rune{completion}, pos
-	}
-
-	// Multiple matches, but no further completion possible
-	c.tabCount++
-	if c.tabCount == 1 {
+	e.tabCount++
+	if e.tabCount == 1 {
 		fmt.Fprint(os.Stdout, "\a")
-		return nil, pos
+		return buf
 	}
-	if c.tabCount == 2 {
-		fmt.Fprintln(os.Stdout, "\n"+joinWithDoubleSpace(matches))
-		fmt.Fprint(os.Stdout, "$ "+word)
-		c.tabCount = 0
-		return nil, pos
+	if e.tabCount == 2 {
+		fmt.Print("\r\n" + joinWithDoubleSpace(matches) + "\r\n" + e.prompt + string(buf))
+		e.tabCount = 0
 	}
-	return nil, pos
+	return buf
+}
+
+func (e *lineEditor) rewriteLine(buf []rune, prevLen int) {
+	fmt.Print("\r")
+	fmt.Print(e.prompt)
+	fmt.Print(string(buf))
+	if prevLen > len(buf) {
+		fmt.Print(strings.Repeat(" ", prevLen-len(buf)))
+		fmt.Print("\r")
+		fmt.Print(e.prompt)
+		fmt.Print(string(buf))
+	}
+}
+
+func (e *lineEditor) readLine() (string, error) {
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return "", err
+	}
+	defer term.Restore(fd, oldState)
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print(e.prompt)
+
+	var buf []rune
+	e.historyPos = len(e.history)
+	prevLen := 0
+	for {
+		r, _, err := reader.ReadRune()
+		if err != nil {
+			return "", err
+		}
+		switch r {
+		case '\r', '\n':
+			fmt.Print("\r\n")
+			e.tabCount = 0
+			e.lastPrefix = ""
+			return string(buf), nil
+		case '\t':
+			buf = e.handleCompletion(buf)
+		case 127, '\b':
+			if len(buf) > 0 {
+				buf = buf[:len(buf)-1]
+				fmt.Print("\b \b")
+			}
+			e.tabCount = 0
+			e.lastPrefix = string(buf)
+		case 3: // Ctrl+C
+			fmt.Print("^C\r\n")
+			e.tabCount = 0
+			e.lastPrefix = ""
+			return "", errInterrupt
+		case 4: // Ctrl+D
+			if len(buf) == 0 {
+				fmt.Print("\r\n")
+				return "", io.EOF
+			}
+		case 0x1b: // basic escape sequence swallowing (arrows, etc.)
+			seq, _ := reader.Peek(2)
+			if len(seq) == 2 && seq[0] == '[' {
+				reader.Discard(2)
+				switch seq[1] {
+				case 'A': // Up arrow
+					if len(e.history) == 0 {
+						continue
+					}
+					if e.historyPos > 0 {
+						e.historyPos--
+					}
+					prevLen = len(buf)
+					buf = []rune(e.history[e.historyPos])
+					e.rewriteLine(buf, prevLen)
+					e.tabCount = 0
+					e.lastPrefix = string(buf)
+				case 'B': // Down arrow
+					if len(e.history) == 0 {
+						continue
+					}
+					if e.historyPos < len(e.history) {
+						e.historyPos++
+					}
+					prevLen = len(buf)
+					if e.historyPos == len(e.history) {
+						buf = []rune{}
+					} else {
+						buf = []rune(e.history[e.historyPos])
+					}
+					e.rewriteLine(buf, prevLen)
+					e.tabCount = 0
+					e.lastPrefix = string(buf)
+				default:
+				}
+				continue
+			}
+		default:
+			buf = append(buf, r)
+			fmt.Print(string(r))
+			e.tabCount = 0
+			e.lastPrefix = string(buf)
+		}
+	}
 }
 
 // Helper to join matches with two spaces
-func joinWithDoubleSpace(matches [][]rune) string {
-	var strs []string
-	for _, m := range matches {
-		strs = append(strs, string(m))
-	}
-	return strings.Join(strs, "  ")
+func joinWithDoubleSpace(matches []string) string {
+	return strings.Join(matches, "  ")
 }
 
 // Add this helper function:
-func longestCommonPrefix(strs [][]rune) string {
+func longestCommonPrefix(strs []string) string {
 	if len(strs) == 0 {
 		return ""
 	}
@@ -111,7 +210,7 @@ func longestCommonPrefix(strs [][]rune) string {
 			break
 		}
 	}
-	return string(prefix)
+	return prefix
 }
 
 func startRepl(cfg *builtinPkg.Config) {
@@ -160,21 +259,9 @@ func startRepl(cfg *builtinPkg.Config) {
 	// Sort commands alphabetically
 	sort.Strings(commands)
 
-	// Set up completer
-	completer := &shellCompleter{commands: commands}
-	rl, err := readline.NewEx(&readline.Config{
-		Prompt:          "$ ",
-		AutoComplete:    completer,
-		InterruptPrompt: "^C",
-		EOFPrompt:       "exit",
-		HistoryFile:     histFile,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "readline error:", err)
-		return
-	}
+	editor := newLineEditor(commands, "$ ")
+
 	defer func() {
-		rl.Close()
 		histFile := os.Getenv("HISTFILE")
 		if histFile != "" {
 			file, err := os.OpenFile(histFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
@@ -187,11 +274,9 @@ func startRepl(cfg *builtinPkg.Config) {
 		}
 	}()
 
-	cfg.RL = rl
-
 	for {
-		line, err := rl.Readline()
-		if err == readline.ErrInterrupt {
+		line, err := editor.readLine()
+		if err == errInterrupt {
 			continue
 		} else if err == io.EOF {
 			break
